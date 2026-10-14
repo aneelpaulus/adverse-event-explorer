@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adverse Event Explorer</title>
+<meta name="description" content="Compare reported side effects between drugs using the FDA's public adverse event database (FAERS via openFDA). Runs entirely in your browser.">
+<style>
+  :root {
+    --bg: #f6f6f3; --card: #fcfcfb; --text: #1c1c1e; --muted: #52514e; --line: #e1e1dc;
+    --accent: #1d5c86; --accent-text: #ffffff;
+    --track: #ecebe6;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --warnbg: #fcf0d6; --warn: #6b4700;
+    --bad: #9e2428;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121314; --card: #1a1a19; --text: #f0efec; --muted: #c3c2b7; --line: #34342f;
+      --accent: #5aa3d6; --accent-text: #0b1620;
+      --track: #2a2a27;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --warnbg: #3a2e14; --warn: #f0c46b;
+      --bad: #f09a9d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; }
+  h2 { font-size: 1.2rem; margin: 28px 0 8px; }
+  .lede { color: var(--muted); margin: 0 0 16px; }
+  .caveat {
+    background: var(--warnbg); color: var(--warn); border-radius: 10px;
+    padding: 10px 14px; font-size: 0.88rem; margin: 0 0 20px;
+  }
+  label { font-weight: 600; display: block; margin-bottom: 6px; }
+  input[type=text], select {
+    font: inherit; background: var(--card); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  input[type=text] { flex: 1; min-width: 0; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
+  .addrow { display: flex; gap: 8px; }
+  button {
+    font: inherit; border-radius: 10px; padding: 10px 16px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+  }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.link { border: none; background: none; color: var(--accent); padding: 4px 0; text-decoration: underline; }
+  button:disabled { opacity: 0.55; cursor: default; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 8px; margin: 10px 0; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--card);
+  }
+  .chip button { padding: 0 8px; border: none; background: none; font-size: 1.1rem; line-height: 1; color: var(--muted); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+  .years { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .hint { color: var(--muted); font-size: 0.85rem; }
+  .status { color: var(--muted); font-size: 0.9rem; min-height: 1.4em; }
+  .status.err { color: var(--bad); }
+  .totals { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin: 12px 0; }
+  .tot { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .tot .name { display: flex; align-items: center; gap: 8px; font-weight: 600; text-transform: capitalize; }
+  .tot .num { font-size: 1.4rem; font-weight: 700; }
+  .rx { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 8px 0; }
+  .rx .term { font-weight: 600; margin-bottom: 6px; }
+  .bar-row { display: grid; grid-template-columns: minmax(70px, 120px) 1fr minmax(64px, auto); gap: 8px; align-items: center; font-size: 0.85rem; margin: 3px 0; }
+  .bar-row .lbl { color: var(--muted); text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-row .val { text-align: right; font-variant-numeric: tabular-nums; }
+  .track { height: 10px; background: var(--track); border-radius: 2px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
+  .why { color: var(--muted); font-size: 0.82rem; margin: -2px 0 6px; }
+  .other { margin: 16px 0; }
+  .other summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.88rem; color: var(--muted); margin: 6px 0 4px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; text-transform: capitalize; }
+  .chart { width: 100%; height: auto; display: block; }
+  .chart text { fill: var(--muted); font-size: 18px; }
+  .chart .grid { stroke: var(--line); stroke-width: 1; }
+  .chart rect.bar:hover { opacity: 0.8; }
+  .tip {
+    position: fixed; pointer-events: none; background: var(--text); color: var(--bg);
+    padding: 6px 10px; border-radius: 8px; font-size: 0.82rem; display: none; z-index: 10;
+  }
+  footer { margin-top: 36px; color: var(--muted); font-size: 0.82rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Adverse Event Explorer</h1>
+  <p class="lede">Compare the side effects people have reported for different drugs, using the FDA Adverse Event Reporting System (FAERS) through the free openFDA service. Pick up to four drugs to see them side by side, or open one drug for its full profile and yearly report trend.</p>
+
+  <p class="caveat"><strong>Read this first.</strong> These are voluntary reports of suspected side effects, not proof that a drug caused them. Drugs that are widely used, heavily publicized, or used in sicker patients collect more reports. Percentages show how often a side effect appears among one drug's reports, not how likely a patient is to experience it. For research and education only; not medical advice.</p>
+
+  <label for="drug">Drugs (up to 4)</label>
+  <div class="addrow">
+    <input type="text" id="drug" placeholder="Generic name, e.g. sertraline" autocomplete="off">
+    <button id="add">Add</button>
+  </div>
+  <div class="chips" id="chips"></div>
+
+  <label>Years the reports were received</label>
+  <div class="years">
+    <select id="fromYear" aria-label="From year"></select>
+    <span class="hint">to</span>
+    <select id="toYear" aria-label="To year"></select>
+  </div>
+
+  <div class="row">
+    <button class="primary" id="go">Compare</button>
+    <button id="exPsych">Example: psychiatry</button>
+    <button id="exOnc">Example: oncology antibodies</button>
+  </div>
+  <div class="status" id="status" aria-live="polite"></div>
+
+  <section id="compare" hidden>
+    <h2>Total reports</h2>
+    <div class="totals" id="totals"></div>
+    <h2>Most reported side effects</h2>
+    <div class="legend" id="legend"></div>
+    <p class="hint">Each bar is the share of that drug's reports that mention the side effect. One report can list several side effects, so shares do not add up to 100%.</p>
+    <div id="rxList"></div>
+    <details id="otherWrap" class="other">
+      <summary>Terms that are probably not side effects</summary>
+      <p class="hint">Reporters sometimes enter the disease being treated, its progression, or how the drug was used in the side effect field. These terms are set aside here instead of being counted as side effects. The rule is automatic, so check any that matter to you.</p>
+      <div id="otherList"></div>
+    </details>
+    <div class="row">
+      <button id="more">Show more</button>
+      <button id="csv">Download CSV</button>
+    </div>
+  </section>
+
+  <section id="detail" hidden>
+    <button class="link" id="back">Back to comparison</button>
+    <h2 id="dTitle" style="text-transform:capitalize"></h2>
+    <div class="totals" id="dTotals"></div>
+    <h2>Reports received per year</h2>
+    <div id="dTrend"></div>
+    <p class="hint">Report volume reflects how much a drug is used and how much attention it gets, as much as its safety. The most recent year is usually incomplete because openFDA updates every few months.</p>
+    <h2>Top 25 reported side effects</h2>
+    <div id="dRx"></div>
+    <p class="hint" id="dSkip"></p>
+    <p><a id="dRaw" target="_blank" rel="noopener">See the raw openFDA data for this drug</a></p>
+  </section>
+
+  <footer>
+    <p><strong>How it works.</strong> For each drug, the page asks openFDA for every report that lists the drug by active ingredient, generic name, or product name, in any role (the suspected cause or a drug the patient was also taking). It then counts reports per side effect and per year. Side effects use the MedDRA terms reporters chose.</p>
+    <p id="updated"></p>
+    <p><strong>Privacy.</strong> Your drug names are sent only to the public openFDA service. Nothing is stored. This tool is not affiliated with or endorsed by the FDA.</p>
+    <p>Open source under the MIT License. Built by Aneel Paulus, MD, MS.</p>
+  </footer>
+</main>
+<div class="tip" id="tip"></div>
+
+<script>
+/* ---------- Pure helpers (no network, testable) ---------- */
+const SERIES = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)"];
+
+function cleanDrug(s) {
+  return String(s || "").toLowerCase().replace(/[^a-z0-9 \-]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function searchClause(drug, fromYear, toYear) {
+  const d = `"${drug}"`;
+  let q = `(patient.drug.activesubstance.activesubstancename:${d} OR patient.drug.openfda.generic_name:${d} OR patient.drug.medicinalproduct:${d})`;
+  if (fromYear || toYear) q += ` AND receivedate:[${fromYear || 1900}0101 TO ${toYear || 2099}1231]`;
+  return q;
+}
+
+function apiUrl(search, count, limit) {
+  let u = `https://api.fda.gov/drug/event.json?search=${encodeURIComponent(search)}&count=${count}`;
+  if (limit) u += `&limit=${limit}`;
+  return u;
+}
+
+// Turn openFDA daily counts into {total, years: [{year, count}]} with empty years filled in.
+function byYear(daily) {
+  const map = new Map();
+  let total = 0;
+  for (const r of daily) {
+    const y = Number(String(r.time).slice(0, 4));
+    map.set(y, (map.get(y) || 0) + r.count);
+    total += r.count;
+  }
+  if (!map.size) return { total: 0, years: [] };
+  const ys = [...map.keys()];
+  const years = [];
+  for (let y = Math.min(...ys); y <= Math.max(...ys); y++) years.push({ year: y, count: map.get(y) || 0 });
+  return { total, years };
+}
+
+// Terms reporters use for how a drug was used or whether it worked, not for a side effect.
+const USAGE_TERMS = new Set([
+  "off label use", "drug ineffective", "product use in unapproved indication", "product used for unknown indication",
+  "drug ineffective for unapproved indication", "product dose omission issue", "product dose omission",
+  "inappropriate schedule of product administration", "product use issue", "intentional product use issue",
+  "therapeutic product effect incomplete", "therapeutic response decreased", "treatment failure",
+  "therapy non-responder", "no adverse event", "wrong technique in product usage process",
+  "disease progression", "malignant neoplasm progression", "neoplasm progression", "condition aggravated"
+
+]);
+// Indication entries that say nothing about the condition itself.
+const VAGUE_INDICATIONS = new Set(["product used for unknown indication", "prophylaxis", "premedication",
+  "antiviral prophylaxis", "thrombosis prophylaxis", "adverse event", "antibiotic prophylaxis"]);
+const QUALIFIERS = /\s+(refractory|recurrent|relapsed|aggravated)$/;
+
+function normTerm(t) { return String(t || "").toLowerCase().trim().replace(QUALIFIERS, ""); }
+
+// From openFDA's indication counts, keep the conditions this drug is mainly given for.
+// A condition counts when it appears in at least 5% of the drug's reports AND is at least
+// a third as common as the drug's top indication. Reports list reasons for every drug the
+// patient took, so this screens out conditions treated by the patient's other medicines.
+function mainIndications(indications, total) {
+  const sums = new Map();
+  for (const r of indications || []) {
+    const k = normTerm(r.term);
+    if (VAGUE_INDICATIONS.has(k)) continue;
+    sums.set(k, (sums.get(k) || 0) + r.count);
+  }
+  const top = Math.max(0, ...sums.values());
+  return new Set([...sums.entries()].filter(([, c]) => total && c / total >= 0.05 && c >= 0.33 * top).map(([k]) => k));
+}
+
+// Why a term is probably not a side effect, or null if it should be treated as one.
+function classify(term, drugs) {
+  const k = normTerm(term);
+  if (USAGE_TERMS.has(String(term).toLowerCase())) return { type: "usage" };
+  const forDrugs = drugs.filter(d => d.indicationSet && d.indicationSet.has(k)).map(d => d.name);
+  return forDrugs.length ? { type: "indication", drugs: forDrugs } : null;
+}
+
+function cellsFor(term, drugs) {
+  const k = normTerm(term);
+  return drugs.map(d => {
+    const hit = d.reactions.find(r => r.term === term);
+    if (hit) return { count: hit.count, pct: d.total ? hit.count / d.total : 0, reason: !!(d.indicationSet && d.indicationSet.has(k)) };
+    const floor = d.reactions.length ? d.reactions[d.reactions.length - 1].count : 0;
+    return { below: true, pct: d.total ? floor / d.total : 0 };
+  });
+}
+
+// Union of each drug's top reactions, ranked by the highest share across drugs,
+// split into likely side effects (main) and terms that are probably something else (other).
+function buildComparison(drugs, n) {
+  const terms = new Map();
+  for (const d of drugs) {
+    for (const r of d.reactions) {
+      const pct = d.total ? r.count / d.total : 0;
+      terms.set(r.term, Math.max(terms.get(r.term) || 0, pct));
+    }
+  }
+  const main = [], other = [];
+  for (const [term, best] of terms) {
+    const cells = cellsFor(term, drugs);
+    const why = classify(term, drugs);
+    // A term stays a side effect if, for at least one drug, it is not a main reason that drug is given.
+    const seScore = Math.max(0, ...cells.filter(c => !c.below && !c.reason).map(c => c.pct));
+    if (why && why.type === "usage") other.push({ term, why, cells, score: best });
+    else if (seScore > 0) main.push({ term, cells, score: seScore });
+    else other.push({ term, why, cells, score: best });
+  }
+  const byScore = (a, b) => b.score - a.score;
+  return { main: main.sort(byScore).slice(0, n), other: other.sort(byScore).slice(0, 8) };
+}
+
+function whyText(why) {
+  return why.type === "usage" ? "Describes how the drug was used, whether it worked, or the disease getting worse"
+    : "A main reason " + why.drugs.join(" and ") + (why.drugs.length > 1 ? " are" : " is") + " given, so likely the condition being treated";
+}
+
+function fmtPct(p) { return p >= 0.1 ? (p * 100).toFixed(0) + "%" : (p * 100).toFixed(1) + "%"; }
+function titleTerm(t) { return t.charAt(0) + t.slice(1).toLowerCase(); }
+/* ---------- End pure helpers ---------- */
+
+const $ = id => document.getElementById(id);
+const MAX_DRUGS = 4, RX_LIMIT = 100;
+let drugs = [];        // names
+let data = [];         // fetched results, same order as drugs at fetch time
+let shown = 15;
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function setStatus(msg, err) { $("status").textContent = msg || ""; $("status").className = "status" + (err ? " err" : ""); }
+
+function renderChips() {
+  $("chips").innerHTML = drugs.map((d, i) =>
+    `<span class="chip"><span class="dot" style="background:${SERIES[i]}"></span>${esc(d)}<button aria-label="Remove ${esc(d)}" data-i="${i}">&times;</button></span>`).join("");
+  $("chips").querySelectorAll("button").forEach(b => b.onclick = () => { drugs.splice(+b.dataset.i, 1); renderChips(); });
+  $("add").disabled = drugs.length >= MAX_DRUGS;
+}
+
+function addDrug() {
+  const d = cleanDrug($("drug").value);
+  if (!d) return;
+  if (drugs.length >= MAX_DRUGS) { setStatus("You can compare up to 4 drugs."); return; }
+  if (!drugs.includes(d)) drugs.push(d);
+  $("drug").value = "";
+  renderChips();
+}
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (r.status === 404) return { results: [] };
+  if (r.status === 429) throw new Error("openFDA is limiting requests right now. Wait a minute and try again.");
+  if (!r.ok) throw new Error("openFDA returned an error (" + r.status + "). Try again shortly.");
+  return r.json();
+}
+
+async function fetchDrug(name, fromYear, toYear) {
+  const s = searchClause(name, fromYear, toYear);
+  const [dates, rx, ind] = await Promise.all([
+    getJSON(apiUrl(s, "receivedate")),
+    getJSON(apiUrl(s, "patient.reaction.reactionmeddrapt.exact", RX_LIMIT)),
+    getJSON(apiUrl(s, "patient.drug.drugindication.exact", 100))
+  ]);
+  const y = byYear(dates.results || []);
+  if (dates.meta && dates.meta.last_updated) $("updated").textContent = "openFDA data last updated: " + dates.meta.last_updated + ".";
+  return { name, total: y.total, years: y.years, reactions: rx.results || [], indicationSet: mainIndications(ind.results || [], y.total), rawUrl: apiUrl(s, "patient.reaction.reactionmeddrapt.exact", 25) };
+}
+
+async function run() {
+  if (cleanDrug($("drug").value)) addDrug();
+  if (!drugs.length) { setStatus("Add at least one drug first."); return; }
+  const fromYear = $("fromYear").value, toYear = $("toYear").value;
+  if (fromYear && toYear && +fromYear > +toYear) { setStatus("The start year is after the end year.", true); return; }
+  $("go").disabled = true;
+  setStatus("Fetching reports from openFDA...");
+  try {
+    data = await Promise.all(drugs.map(d => fetchDrug(d, fromYear, toYear)));
+    const empty = data.filter(d => !d.total).map(d => d.name);
+    if (empty.length === data.length) {
+      setStatus(`No reports found for ${empty.join(", ")}. Check the spelling or try the generic name.`, true);
+      $("compare").hidden = true; $("detail").hidden = true;
+      return;
+    }
+    setStatus(empty.length ? `No reports found for ${empty.join(", ")}. Check the spelling or try the generic name.` : "", !!empty.length);
+    shown = 15;
+    renderCompare();
+  } catch (e) {
+    setStatus(e.message || "Could not reach openFDA.", true);
+  } finally {
+    $("go").disabled = false;
+  }
+}
+
+function renderCompare() {
+  $("detail").hidden = true;
+  $("compare").hidden = false;
+  const live = data.filter(d => d.total);
+  $("totals").innerHTML = data.map((d, i) => `
+    <div class="tot">
+      <div class="name"><span class="dot" style="background:${SERIES[i]}"></span>${esc(d.name)}</div>
+      <div class="num">${d.total.toLocaleString()}</div>
+      ${d.total ? `<button class="link" data-i="${i}">Open full profile</button>` : `<span class="hint">No reports found</span>`}
+    </div>`).join("");
+  $("totals").querySelectorAll("button").forEach(b => b.onclick = () => renderDetail(+b.dataset.i));
+
+  $("legend").innerHTML = data.length > 1
+    ? data.map((d, i) => d.total ? `<span><span class="dot" style="background:${SERIES[i]}"></span>${esc(d.name)}</span>` : "").join("") : "";
+
+  const { main, other } = buildComparison(live, shown);
+  const idx = live.map(d => data.indexOf(d));
+  const max = Math.max(0.0001, ...main.concat(other).flatMap(r => r.cells.map(c => c.below ? 0 : c.pct)));
+  const card = r => `
+    <div class="rx"><div class="term">${esc(titleTerm(r.term))}</div>${r.why ? `<div class="why">${esc(whyText(r.why))}</div>` : ""}
+      ${r.cells.map((c, j) => {
+        const d = live[j], color = SERIES[idx[j]];
+        if (c.below) return `<div class="bar-row"><span class="lbl">${esc(d.name)}</span><span class="hint">not in top ${RX_LIMIT}</span><span class="val">&lt;${fmtPct(c.pct)}</span></div>`;
+        const tip = `${d.name}: ${c.count.toLocaleString()} of ${d.total.toLocaleString()} reports (${fmtPct(c.pct)})`;
+        if (c.reason && !r.why) return `<div class="bar-row" data-tip="${esc(tip)}"><span class="lbl">${esc(d.name)}</span><span class="hint">a main reason it is given</span><span class="val muted">${fmtPct(c.pct)}</span></div>`;
+        return `<div class="bar-row" data-tip="${esc(tip)}"><span class="lbl">${esc(d.name)}</span><div class="track"><div class="fill" style="width:${(100 * c.pct / max).toFixed(1)}%;background:${color}"></div></div><span class="val">${fmtPct(c.pct)}</span></div>`;
+      }).join("")}
+    </div>`;
+  $("rxList").innerHTML = main.map(card).join("");
+  $("otherWrap").hidden = !other.length;
+  $("otherList").innerHTML = other.map(card).join("");
+  $("more").hidden = shown >= 40;
+}
+
+function trendSvg(years, color) {
+  if (!years.length) return `<p class="hint">No yearly data.</p>`;
+  const W = 640, H = 260, L = 70, R = 8, T = 12, B = 34;
+  const max = Math.max(...years.map(y => y.count));
+  const step = (W - L - R) / years.length, bw = Math.max(2, step - 2);
+  const nice = v => { const p = Math.pow(10, Math.floor(Math.log10(v || 1))); return Math.ceil(v / p) * p; };
+  const top = nice(max);
+  const y = v => T + (H - T - B) * (1 - v / top);
+  const ticks = [0, top / 2, top];
+  const every = Math.ceil(years.length / 5);
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Reports per year">`;
+  ticks.forEach(t => { s += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text x="${L - 8}" y="${y(t) + 6}" text-anchor="end">${t.toLocaleString()}</text>`; });
+  years.forEach((d, i) => {
+    const x = L + i * step + 1, h = H - B - y(d.count);
+    s += `<rect class="bar" x="${x}" y="${y(d.count)}" width="${bw}" height="${Math.max(0, h)}" rx="2" fill="${color}" data-tip="${d.year}: ${d.count.toLocaleString()} reports"/>`;
+    if (i % every === 0) s += `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${d.year}</text>`;
+  });
+  return s + `</svg>`;
+}
+
+function renderDetail(i) {
+  const d = data[i], color = SERIES[i];
+  $("compare").hidden = true;
+  $("detail").hidden = false;
+  $("back").hidden = data.length < 2;
+  $("dTitle").textContent = d.name;
+  const peak = d.years.reduce((a, b) => (b.count > a.count ? b : a), { count: 0 });
+  $("dTotals").innerHTML = `
+    <div class="tot"><div class="hint">Total reports</div><div class="num">${d.total.toLocaleString()}</div></div>
+    <div class="tot"><div class="hint">Busiest year</div><div class="num">${peak.year || "n/a"}</div></div>
+    <div class="tot"><div class="hint">Years covered</div><div class="num">${d.years.length ? d.years[0].year + " to " + d.years[d.years.length - 1].year : "n/a"}</div></div>`;
+  $("dTrend").innerHTML = trendSvg(d.years, color);
+  const top = d.reactions.filter(r => !classify(r.term, [d])).slice(0, 25);
+  const skipped = d.reactions.filter(r => classify(r.term, [d])).slice(0, 8);
+  const fmtList = arr => arr.map(r => `${esc(titleTerm(r.term))} (${fmtPct(r.count / d.total)})`).join(", ");
+  const usage = skipped.filter(r => classify(r.term, [d]).type === "usage");
+  const cond = skipped.filter(r => classify(r.term, [d]).type === "indication");
+  $("dSkip").innerHTML = [
+    cond.length ? `<strong>Left out as likely the condition being treated:</strong> ${fmtList(cond)}.` : "",
+    usage.length ? `<strong>Left out as describing use, effectiveness, or disease progression:</strong> ${fmtList(usage)}.` : ""
+  ].filter(Boolean).join(" ");
+  const max = Math.max(0.0001, ...top.map(r => r.count / d.total));
+  $("dRx").innerHTML = top.map(r => {
+    const p = r.count / d.total;
+    return `<div class="bar-row" style="grid-template-columns:minmax(110px,220px) 1fr minmax(56px,auto)" data-tip="${esc(`${r.count.toLocaleString()} of ${d.total.toLocaleString()} reports`)}"><span class="lbl" style="text-transform:none">${esc(titleTerm(r.term))}</span><div class="track"><div class="fill" style="width:${(100 * p / max).toFixed(1)}%;background:${color}"></div></div><span class="val">${fmtPct(p)}</span></div>`;
+  }).join("");
+  $("dRaw").href = d.rawUrl;
+  window.scrollTo({ top: $("detail").offsetTop - 12, behavior: "smooth" });
+}
+
+function toCsv() {
+  const live = data.filter(d => d.total);
+  const { main, other } = buildComparison(live, 40);
+  const head = ["Term", "Category", ...live.flatMap(d => [`${d.name} reports`, `${d.name} share`])];
+  const body = main.concat(other).map(r => [titleTerm(r.term), r.why ? whyText(r.why) : "Side effect", ...r.cells.flatMap(c => c.below ? ["", `<${fmtPct(c.pct)}`] : [c.count, fmtPct(c.pct)])]);
+  const totals = ["Total reports", "", ...live.flatMap(d => [d.total, ""])];
+  return [head, totals, ...body].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+}
+
+// Tooltip for any element with data-tip
+document.addEventListener("mousemove", e => {
+  const el = e.target.closest && e.target.closest("[data-tip]");
+  const tip = $("tip");
+  if (!el) { tip.style.display = "none"; return; }
+  tip.textContent = el.getAttribute("data-tip");
+  tip.style.display = "block";
+  tip.style.left = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8) + "px";
+  tip.style.top = (e.clientY + 14) + "px";
+});
+
+(function init() {
+  const now = new Date().getFullYear();
+  const opts = ['<option value="">Any</option>'];
+  for (let y = now; y >= 2004; y--) opts.push(`<option value="${y}">${y}</option>`);
+  $("fromYear").innerHTML = opts.join("");
+  $("toYear").innerHTML = opts.join("");
+  $("add").onclick = addDrug;
+  $("drug").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addDrug(); } });
+  $("go").onclick = run;
+  $("back").onclick = () => renderCompare();
+  $("more").onclick = () => { shown = 40; renderCompare(); };
+  $("exPsych").onclick = () => { drugs = ["ketamine", "esketamine", "sertraline"]; renderChips(); run(); };
+  $("exOnc").onclick = () => { drugs = ["daratumumab", "rituximab", "elotuzumab"]; renderChips(); run(); };
+  $("csv").onclick = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([toCsv()], { type: "text/csv" }));
+    a.download = "adverse-event-comparison.csv";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  renderChips();
+})();
+</script>
+</body>
+</html>
