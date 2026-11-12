@@ -89,6 +89,13 @@
   }
   footer { margin-top: 36px; color: var(--muted); font-size: 0.82rem; }
   a { color: var(--accent); }
+  .kit { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; font-size: 0.85rem; margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .kit a { color: var(--muted); text-decoration: none; }
+  .kit a:hover { color: var(--accent); text-decoration: underline; }
+  .kit a.here { color: var(--text); font-weight: 600; }
+  .kit a.home { color: var(--accent); font-weight: 700; }
+  .xlinks { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.88rem; margin-top: 6px; }
+  .xlinks a { color: var(--accent); }
 </style>
 <style>
 /* Medical AI Toolkit shared look (Nov 2026). Loaded after each page's own styles. */
@@ -219,6 +226,7 @@ footer details p{margin:8px 0 0;max-width:46em}
     <h2>Top 25 side effects</h2>
     <div id="dRx"></div>
     <p class="hint" id="dSkip"></p>
+    <div class="xlinks" id="dLinks"></div>
     <p><a id="dRaw" target="_blank" rel="noopener">Raw openFDA data</a></p>
   </section>
 
@@ -417,6 +425,7 @@ async function run() {
     }
     setStatus(empty.length ? `No reports found for ${empty.join(", ")}. Check the spelling or try the generic name.` : "", !!empty.length);
     shown = 15;
+    saveToAddress(fromYear, toYear);
     renderCompare();
   } catch (e) {
     setStatus(e.message || "Could not reach openFDA.", true);
@@ -424,6 +433,17 @@ async function run() {
     $("go").disabled = false;
   }
 }
+
+// Keep the search in the web address, so a result can be bookmarked or shared, and other tools can link here.
+const KIT = "https://aneelpaulus.github.io/";
+function saveToAddress(fromYear, toYear) {
+  const p = new URLSearchParams();
+  p.set("drugs", drugs.join(","));
+  if (fromYear) p.set("from", fromYear);
+  if (toYear) p.set("to", toYear);
+  try { history.replaceState(null, "", "?" + p.toString()); } catch (e) {}
+}
+function labelLink(name) { return `${KIT}drug-label-explainer/?drug=${encodeURIComponent(name)}`; }
 
 function renderCompare() {
   $("detail").hidden = true;
@@ -433,7 +453,7 @@ function renderCompare() {
     <div class="tot">
       <div class="name"><span class="dot" style="background:${SERIES[i]}"></span>${esc(d.name)}</div>
       <div class="num">${d.total.toLocaleString()}</div>
-      ${d.total ? `<button class="link" data-i="${i}">Full profile</button>` : `<span class="hint">No reports found</span>`}
+      ${d.total ? `<button class="link" data-i="${i}">Full profile</button><div class="xlinks"><a href="${labelLink(d.name)}">Read its FDA label</a></div>` : `<span class="hint">No reports found</span>`}
     </div>`).join("");
   $("totals").querySelectorAll("button").forEach(b => b.onclick = () => renderDetail(+b.dataset.i));
 
@@ -506,6 +526,7 @@ function renderDetail(i) {
     return `<div class="bar-row" style="grid-template-columns:minmax(110px,220px) 1fr minmax(56px,auto)" data-tip="${esc(`${r.count.toLocaleString()} of ${d.total.toLocaleString()} reports`)}"><span class="lbl" style="text-transform:none">${esc(titleTerm(r.term))}</span><div class="track"><div class="fill" style="width:${(100 * p / max).toFixed(1)}%;background:${color}"></div></div><span class="val">${fmtPct(p)}</span></div>`;
   }).join("");
   $("dRaw").href = d.rawUrl;
+  $("dLinks").innerHTML = `<a href="${labelLink(d.name)}">Read the FDA label for ${esc(d.name)} in plain English</a>`;
   window.scrollTo({ top: $("detail").offsetTop - 12, behavior: "smooth" });
 }
 
@@ -550,8 +571,17 @@ document.addEventListener("mousemove", e => {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
   renderChips();
+  // Open with a search already filled in, e.g. ?drugs=ketamine,esketamine or ?drug=daratumumab
+  const q = new URLSearchParams(location.search);
+  const fromAddr = (q.get("drugs") || q.get("drug") || "").split(",").map(cleanDrug).filter(Boolean).slice(0, MAX_DRUGS);
+  if (fromAddr.length) {
+    drugs = [...new Set(fromAddr)];
+    if (/^\d{4}$/.test(q.get("from") || "")) $("fromYear").value = q.get("from");
+    if (/^\d{4}$/.test(q.get("to") || "")) $("toYear").value = q.get("to");
+    renderChips();
+    run();
+  }
 })();
-(function(){const P=new URLSearchParams(location.search);const d=(P.get("drugs")||P.get("drug")||"").split(",").map(cleanDrug).filter(Boolean).slice(0,4);if(d.length){drugs=d;renderChips();run();}})();
 </script>
 </body>
 </html>
